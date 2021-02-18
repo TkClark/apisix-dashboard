@@ -21,6 +21,7 @@ import CodeMirror from '@uiw/react-codemirror';
 import { PanelSection } from '@api7-dashboard/ui';
 import queryString from 'query-string';
 import Base64 from 'base-64';
+import urlRegexSafe from 'url-regex-safe';
 
 import {
   HTTP_METHOD_OPTION_LIST,
@@ -143,8 +144,7 @@ const DebugDrawView: React.FC<RouteModule.DebugDrawProps> = (props) => {
 
   const handleDebug = (url: string) => {
     /* eslint-disable no-useless-escape */
-    const urlReg = /^(?=^.{3,255}$)(www\.)?[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+(:\d+)*(\/\w*)*(\.\w+)*([\?&]\w+=\w*)*$/;
-    if (!urlReg.test(url)) {
+    if (!urlRegexSafe({exact: true, strict: false}).test(url)) {
       notification.warning({
         message: formatMessage({ id: 'page.route.input.placeholder.requestUrl' }),
       });
@@ -224,6 +224,7 @@ const DebugDrawView: React.FC<RouteModule.DebugDrawProps> = (props) => {
             })}
           </Select>
           <Search
+            id="debugUri"
             placeholder={formatMessage({ id: 'page.route.input.placeholder.requestUrl' })}
             allowClear
             enterButton={formatMessage({ id: 'page.route.button.send' })}

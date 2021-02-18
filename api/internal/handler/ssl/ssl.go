@@ -67,10 +67,13 @@ func (h *Handler) ApplyRoute(r *gin.Engine) {
 	r.POST("/apisix/admin/check_ssl_cert", wgin.Wraps(h.Validate,
 		wrapper.InputType(reflect.TypeOf(entity.SSL{}))))
 
-	r.PATCH("/apisix/admin/ssl/:id", consts.ErrorWrapper(Patch))
-	r.PATCH("/apisix/admin/ssl/:id/*path", consts.ErrorWrapper(Patch))
+	r.PATCH("/apisix/admin/ssl/:id", wgin.Wraps(h.Patch,
+		wrapper.InputType(reflect.TypeOf(PatchInput{}))))
+	r.PATCH("/apisix/admin/ssl/:id/*path", wgin.Wraps(h.Patch,
+		wrapper.InputType(reflect.TypeOf(PatchInput{}))))
 
-	r.POST("/apisix/admin/check_ssl_exists", consts.ErrorWrapper(Exist))
+	r.POST("/apisix/admin/check_ssl_exists", wgin.Wraps(h.Exist,
+		wrapper.InputType(reflect.TypeOf(ExistCheckInput{}))))
 }
 
 type GetInput struct {
@@ -195,7 +198,11 @@ func (h *Handler) Create(c droplet.Context) (interface{}, error) {
 		return handler.SpecCodeResponse(err), err
 	}
 
-	return ret, nil
+	ssl = ret.(*entity.SSL)
+	ssl.Key = ""
+	ssl.Keys = nil
+
+	return ssl, nil
 }
 
 type UpdateInput struct {
@@ -231,16 +238,26 @@ func (h *Handler) Update(c droplet.Context) (interface{}, error) {
 		return handler.SpecCodeResponse(err), err
 	}
 
-	return ret, nil
+	ssl = ret.(*entity.SSL)
+	ssl.Key = ""
+	ssl.Keys = nil
+
+	return ssl, nil
 }
 
-func Patch(c *gin.Context) (interface{}, error) {
-	reqBody, _ := c.GetRawData()
-	ID := c.Param("id")
-	subPath := c.Param("path")
+type PatchInput struct {
+	ID      string `auto_read:"id,path"`
+	SubPath string `auto_read:"path,path"`
+	Body    []byte `auto_read:"@body"`
+}
 
-	sslStore := store.GetStore(store.HubKeySsl)
-	stored, err := sslStore.Get(c, ID)
+func (h *Handler) Patch(c droplet.Context) (interface{}, error) {
+	input := c.Input().(*PatchInput)
+	reqBody := input.Body
+	id := input.ID
+	subPath := input.SubPath
+
+	stored, err := h.sslStore.Get(c.Context(), id)
 	if err != nil {
 		return handler.SpecCodeResponse(err), err
 	}
@@ -256,12 +273,16 @@ func Patch(c *gin.Context) (interface{}, error) {
 		return handler.SpecCodeResponse(err), err
 	}
 
-	ret, err := sslStore.Update(c, &ssl, false)
+	ret, err := h.sslStore.Update(c.Context(), &ssl, false)
 	if err != nil {
 		return handler.SpecCodeResponse(err), err
 	}
 
-	return ret, nil
+	_ssl := ret.(*entity.SSL)
+	_ssl.Key = ""
+	_ssl.Keys = nil
+
+	return _ssl, nil
 }
 
 type BatchDelete struct {
@@ -423,6 +444,10 @@ func checkSniExists(rows []store.Row, sni string) bool {
 	return false
 }
 
+type ExistCheckInput struct {
+	Body []byte `auto_read:"@body"`
+}
+
 // swagger:operation POST /apisix/admin/check_ssl_exists checkSSLExist
 //
 // Check whether the SSL exists.
@@ -450,17 +475,16 @@ func checkSniExists(rows []store.Row, sni string) bool {
 //     description: unexpected error
 //     schema:
 //       "$ref": "#/definitions/ApiError"
-func Exist(c *gin.Context) (interface{}, error) {
-	//input := c.Input().(*ExistInput)
+func (h *Handler) Exist(c droplet.Context) (interface{}, error) {
+	input := c.Input().(*ExistCheckInput)
 	//temporary
-	reqBody, _ := c.GetRawData()
+	reqBody := input.Body
 	var hosts []string
 	if err := json.Unmarshal(reqBody, &hosts); err != nil {
 		return &data.SpecCodeResponse{StatusCode: http.StatusBadRequest}, err
 	}
 
-	routeStore := store.GetStore(store.HubKeySsl)
-	ret, err := routeStore.List(c, store.ListInput{
+	ret, err := h.sslStore.List(c.Context(), store.ListInput{
 		Predicate:  nil,
 		PageSize:   0,
 		PageNumber: 0,
